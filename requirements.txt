@@ -1,0 +1,2 @@
+firebase_admin
+git+https://github.com/ozgur/python-firebase
