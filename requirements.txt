@@ -1,2 +1,4 @@
-firebase_admin
-git+https://github.com/ozgur/python-firebase
+# firebase_admin
+# git+https://github.com/ozgur/python-firebase
+prettytable
+enquiries

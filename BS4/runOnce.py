@@ -1,14 +1,16 @@
+from models.models import Search
 import utils
-import services.firebaseService as firebaseService
+import dataBase.database as db
 
 def start():
     if __name__ == "runOnce":
         print("")
-        userSearch = input("Gimme the damn search : ")
-        products = utils.search_page(userSearch)
+        transcript = input("Gimme the damn search : ")
+        searchOBJ = Search(transcript,0,0,0,True,False)
+        products = utils.search_page(searchOBJ)
 
         if(products != None):
-            firebaseService.saveProducts(products,userSearch)
+            db.insertSearchResult(products,searchOBJ.transcript)
         else:
             print('No Results! Sorry')
             print("")

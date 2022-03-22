@@ -1,14 +1,19 @@
 from bs4 import BeautifulSoup
 import requests
-import services.firebaseService as firebaseService
+from models.models import Product,Search
+import uuid
+import dataBase.database as db
 
+def formatNumber(num):
+  if num % 1 == 0:
+    return int(num)
+  else:
+    return num
 
-def search_page(search,index = None):
+def search_page(search:Search):
     if __name__ != "__main__":
-        firebaseService.saveSearch(search)
-        URL = 'https://www.olx.pt/ads/q-' + search + "/"
-        if index != None:
-            URL = URL + '?page=' + str(index)
+        db.insertSearch(search)
+        URL = 'https://www.olx.pt/ads/q-' + search.transcript + "/"
         r = requests.get(URL)
         soup = BeautifulSoup(r.content, 'html5lib')
 
@@ -18,9 +23,9 @@ def search_page(search,index = None):
             result = getProducts(page,search,soup)
         return result
 
-def search_pageWithNumber(search,index):
+def search_pageWithNumber(search:Search,index):
     if __name__ != "__main__":
-        URL = 'https://www.olx.pt/ads/q-' + search + "/"
+        URL = 'https://www.olx.pt/ads/q-' + search.transcript + "/"
         if index != None:
             URL = URL + '?page=' + str(index)
         r = requests.get(URL)
@@ -28,10 +33,10 @@ def search_pageWithNumber(search,index):
 
         return soup
 
-def buildProduct(productRAW):
+def buildProduct(productRAW) -> Product: 
     if __name__ != "__main__":
-        product = {}
 
+        
         small1 = productRAW.find('td', attrs = {'valign': 'bottom','class': 'bottom-cell'})
         small1 = small1.find('small').find('span')
         location = small1.text
@@ -39,22 +44,30 @@ def buildProduct(productRAW):
 
         strong1 = productRAW.find("strong")
         name = strong1.text
-        price = strong1.findNext("strong").text
-
+        rawPrice = strong1.findNext("strong").text.split(" ")[0]
+        price:float = '0'
+        isTradable = False
+        if (rawPrice == "Troca"):
+            isTradable = True
+            price = -1
+        else:
+           priceTemp:str = rawPrice
+           numberOfCommas = priceTemp.find(',')
+           priceTemp = priceTemp.replace('.','')
+           if(numberOfCommas != -1):
+            priceTemp = priceTemp.replace(',','.')
+           price = float(priceTemp)
         isNegotiable = True
         if productRAW.find('span', attrs = {'class': 'normal inlblk pdingtop5 lheight16 color-2'}) == None:
             isNegotiable = False
+        url = productRAW.find('a')['href']
+        img = productRAW.find('img')['src'] if productRAW.find('img') != None else 'NO IMAGE'
+        product = Product(name,formatNumber(price),isTradable,isNegotiable,date,url,img,location)
+        # product = {'id':id,'name':name,'price':price,'isTradable':isTradable,'isNegotiable':isNegotiable,'date':date,'url':url,'img':img,'location':location}
 
-        product['name'] = name
-        product['price'] = price.split(" ")[0]
-        product['negotiable'] = isNegotiable
-        product['date'] = date
-        product['url'] = productRAW.find('a')['href']
-        product['img'] = productRAW.find('img')['src'] if productRAW.find('img') != None else 'NO IMAGE'
-        product['location'] = location
-        return product    
+        return product  
 
-def getProducts(page,userSearch,soup):
+def getProducts(page,search:Search,soup):
     if __name__ != "__main__":
         numberOfProducts = page.find("p").text.split(" ")[1];
         pagerEl = soup.find('div', attrs = {'class':'pager rel clr'})
@@ -69,18 +82,15 @@ def getProducts(page,userSearch,soup):
         print("Number of Pages:         " + str(numberOfPages))
         print("")
 
-        products = { 'trade': [],'buy': [] }
+        products:list = []
 
         productList = soup.find('table', attrs = {'id':'offers_table'})
 
         # Cycle all the adds and builds the product objects
         offer = productList.find('div', attrs = {'class':'offer-wrapper'})
         product = buildProduct(offer)
-        if (product['price'] == "Troca"):
-            products['trade'].append(product)
-        else:
-            products['buy'].append(product)
-        
+        products.append(product)
+            
         isLastProduct = False
         while isLastProduct == False:
             offer = offer.findNext('div', attrs = {'class':'offer-wrapper'})
@@ -88,26 +98,20 @@ def getProducts(page,userSearch,soup):
                 isLastProduct = True
             else:
                 product = buildProduct(offer)
-                if (product['price'] == "Troca"):
-                    products['trade'].append(product)
-                else:
-                    products['buy'].append(product)
+                products.append(product)
         # Cycle all the adds and builds the product objects
 
         print("page: " + str(1))
 
         if(numberOfPages > 1):
             for pageIndex in range(2, numberOfPages + 1):
-                    soup = search_pageWithNumber(userSearch, pageIndex)
+                    soup = search_pageWithNumber(search, pageIndex)
                     productList = soup.find('table', attrs = {'id':'offers_table'})
 
                     # Cycle all the adds and builds the product objects
                     offer = productList.find('div', attrs = {'class':'offer-wrapper'})
                     product = buildProduct(offer)
-                    if (product['price'] == "Troca"):
-                        products['trade'].append(product)
-                    else:
-                        products['buy'].append(product)
+                    products.append(product)
                     
 
                     isLastProduct = False
@@ -117,10 +121,7 @@ def getProducts(page,userSearch,soup):
                             isLastProduct = True
                         else:
                             product = buildProduct(offer)
-                            if (product['price'] == "Troca"):
-                                products['trade'].append(product)
-                            else:
-                                products['buy'].append(product)
+                            products.append(product)
                     # Cycle all the adds and builds the product objects
 
                     print("page: " + str(pageIndex))
@@ -130,3 +131,10 @@ def getProducts(page,userSearch,soup):
                         pageIndex = pageIndex + 1
         
         return products
+
+
+def confirm_prompt(question: str) -> bool:
+    reply = None
+    while reply not in ("", "y", "n"):
+        reply = input(f"{question} (Y/n): ").lower()
+    return (reply in ("", "y"))
